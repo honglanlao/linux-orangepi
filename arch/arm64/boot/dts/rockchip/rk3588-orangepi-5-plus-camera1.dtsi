@@ -8,6 +8,47 @@
 	status = "disabled";
 };
 
+// for og02b1b camera
+&csi_dphy0 {
+	status = "okay";
+	ports {
+		port@0 {
+			mipi_in_ucam0: endpoint@1 {
+				remote-endpoint = <&ucam_out0>;
+				data-lanes = <1 2>;
+			};
+		};
+		port@1 {
+			csidphy0_out: endpoint@0 {
+				// remote-endpoint = <&mipi_csi2_input>;
+				remote-endpoint = <&isp_in>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+};
+
+// for og02b1b camera
+&csi_dphy1 {
+	status = "disabled";
+	ports {
+		port@0 {
+			csi_dphy1_input: endpoint@1 {
+				/delete-property/ remote-endpoint;
+				// remote-endpoint = <&ucam_out1>;
+				data-lanes = <1 2>;
+			};
+		};
+		port@1 {
+			csi_dphy1_output: endpoint@0 {
+				// remote-endpoint = <&isp_in>;
+				/delete-property/ remote-endpoint;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+};
+
 &csi2_dphy0 {
 	status = "disabled";
 	ports {
@@ -44,6 +85,43 @@
 		                reg = <0>;
 		                remote-endpoint = <&mipi2_csi2_input>;
 		        };
+		};
+	};
+};
+
+// for og02b1b camera
+&i2c1 {
+	status = "okay";
+	clock-frequency = <400000>;
+	/delete-node/ ar0230@10;
+	/delete-node/ ov4689@36;
+	/delete-node/ os04a10@36;
+	/delete-node/ ov2718@10;
+	/delete-node/ gc2053@37;
+	
+	og02b1b: og02b1b@c0 {
+		compatible = "ovti,og02b1b";
+		reg = <0xc0>;
+		clocks = <&cru CLK_MIPICSI_OUT>;
+		clock-names = "xvclk";
+		power-domains = <&power RV1126_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipicsi_clk0>;
+		avdd-supply = <&vcc_avdd>;
+		dovdd-supply = <&vcc_dovdd>;
+		dvdd-supply = <&vcc_dvdd>;
+		pwdn-gpios = <&gpio1 RK_PD6 GPIO_ACTIVE_HIGH>;
+        	reset-gpios = <&gpio1 RK_PD7 GPIO_ACTIVE_LOW>;  
+		rockchip,camera-module-index = <1>;
+		rockchip,camera-module-facing = "front";
+		rockchip,camera-module-name = "HK301";
+		rockchip,camera-module-lens-name = "JZ-7070BS-A2-M8";
+		ir-cut = <&cam_ircut0>;
+		port {
+			ucam_out0: endpoint {
+				remote-endpoint = <&mipi_in_ucam0>;
+				data-lanes = <1 2>;
+			};
 		};
 	};
 };
@@ -144,6 +222,30 @@
 	};
 };
 
+// for og02b1b camera
+
+&mipi_csi2 {
+	status = "disabled";
+	ports {
+		port@0 {
+			mipi_csi2_input: endpoint@1 {
+				// remote-endpoint = <&csidphy0_out>;
+				/delete-property/ remote-endpoint;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+
+		port@1 {
+			mipi_csi2_output: endpoint@0 {
+				// remote-endpoint = <&cif_mipi_in>;
+				/delete-property/ remote-endpoint;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+};
+
+
 &mipi2_csi2 {
 	status = "disabled";
 	ports {
@@ -170,6 +272,18 @@
 	};
 };
 
+// for og02b1b camera
+&rkcif_mipi_lvds {
+	status = "disabled";
+	port {
+		cif_mipi_in: endpoint {
+			// remote-endpoint = <&mipi_csi2_output>;
+			/delete-property/ remote-endpoint;
+			data-lanes = <1 2 3 4>;
+		};
+	};
+};
+
 &rkcif_mipi_lvds2 {
 	status = "disabled";
 	port {
@@ -179,11 +293,54 @@
 	};
 };
 
+// for og02b1b camera
+&rkcif_mipi_lvds_sditf {
+	status = "disabled";
+
+	port {
+		cif_sditf: endpoint {
+			// remote-endpoint = <&isp_virt1_in>;
+			/delete-property/ remote-endpoint;
+			data-lanes = <1 2 3 4>;
+		};
+	};
+};
+
 &rkcif_mipi_lvds2_sditf {
 	status = "disabled";
 	port {
 		mipi2_lvds_sditf: endpoint {
 			remote-endpoint = <&isp0_vir1>;
+		};
+	};
+};
+
+// for og02b1b camera
+&rkisp_vir0 {
+	ports {
+		port@0 {
+			isp_in: endpoint@0 {
+				// remote-endpoint = <&csi_dphy1_output>;
+				remote-endpoint = <&csidphy0_out>;
+			};
+		};
+	};
+};
+
+// for og02b1b camera
+&rkisp_vir1 {
+	status = "disabled";
+	ports {
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			isp_virt1_in: endpoint@0 {
+				reg = <0>;
+				// remote-endpoint = <&cif_sditf>;
+				/delete-property/ remote-endpoint;
+			};
 		};
 	};
 };
@@ -198,4 +355,16 @@
 			remote-endpoint = <&mipi2_lvds_sditf>;
 		};
 	};
+};
+
+// for og02b1b camera
+&rkispp_vir1 {
+	status = "disabled";
+};
+
+// for og02b1b camera
+&rkispp {
+	status = "okay";
+	/* the max input w h and fps of mulit sensor */
+	max-input = <1600 1300 60>;
 };

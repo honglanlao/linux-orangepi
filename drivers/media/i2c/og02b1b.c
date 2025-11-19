@@ -946,6 +946,7 @@ static int og02b1b_enum_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int og02b1b_g_mbus_config(struct v4l2_subdev *sd,
+                                unsigned int pad_id,
                                 struct v4l2_mbus_config *config)
 {
         u32 val = 0;
@@ -953,7 +954,7 @@ static int og02b1b_g_mbus_config(struct v4l2_subdev *sd,
         val = 1 << (OG02B1B_LANES - 1) |
               V4L2_MBUS_CSI2_CHANNEL_0 |
               V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-        config->type = V4L2_MBUS_CSI2;
+        config->type = V4L2_MBUS_CSI2_DPHY;
         config->flags = val;
 
         return 0;
@@ -981,7 +982,7 @@ static const struct v4l2_subdev_core_ops og02b1b_core_ops = {
 static const struct v4l2_subdev_video_ops og02b1b_video_ops = {
         .s_stream = og02b1b_s_stream,
         .g_frame_interval = og02b1b_g_frame_interval,
-        .g_mbus_config = og02b1b_g_mbus_config,
+       // .g_mbus_config = og02b1b_g_mbus_config,
 };
 
 static const struct v4l2_subdev_pad_ops og02b1b_pad_ops = {
@@ -990,6 +991,7 @@ static const struct v4l2_subdev_pad_ops og02b1b_pad_ops = {
         .enum_frame_interval = og02b1b_enum_frame_interval,
         .get_fmt = og02b1b_get_fmt,
         .set_fmt = og02b1b_set_fmt,
+        .get_mbus_config = og02b1b_g_mbus_config,
 };
 
 static const struct v4l2_subdev_ops og02b1b_subdev_ops = {
@@ -1102,7 +1104,7 @@ static int og02b1b_initialize_controls(struct og02b1b *og02b1b)
         h_blank = mode->hts_def - mode->width;
         og02b1b->hblank = v4l2_ctrl_new_std(handler, NULL, V4L2_CID_HBLANK,
                                 h_blank, h_blank, 1, h_blank);
-        printk("OG02B1B function:%s line:%d   hblank:%x\n",__FUNCTION__,__LINE__,(int)og02b1b->hblank);
+        //printk("OG02B1B function:%s line:%d   hblank:%x\n",__FUNCTION__,__LINE__,(unsigned int)og02b1b->hblank);
         if (og02b1b->hblank)
                 og02b1b->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -1112,34 +1114,34 @@ static int og02b1b_initialize_controls(struct og02b1b *og02b1b)
                                 OG02B1B_VTS_MAX - mode->height,
                                 1, vblank_def);
 
-        printk("OG02B1B function:%s line:%d   vblank:%x\n",__FUNCTION__,__LINE__,(int)og02b1b->vblank);
+        //printk("OG02B1B function:%s line:%d   vblank:%x\n",__FUNCTION__,__LINE__,(unsigned int)og02b1b->vblank);
         exposure_max = mode->vts_def - 4;
         og02b1b->exposure = v4l2_ctrl_new_std(handler, &og02b1b_ctrl_ops,
                                 V4L2_CID_EXPOSURE, OG02B1B_EXPOSURE_MIN,
                                 exposure_max, OG02B1B_EXPOSURE_STEP,
                                 mode->exp_def);
 
-        printk("OG02B1B function:%s line:%d   exposure:%x  exposure_max:%d\n",__FUNCTION__,__LINE__,(int)og02b1b->exposure,(int)exposure_max);
+        //printk("OG02B1B function:%s line:%d   exposure:%x  exposure_max:%d\n",__FUNCTION__,__LINE__,(unsigned int)og02b1b->exposure,(int)exposure_max);
         og02b1b->anal_gain = v4l2_ctrl_new_std(handler, &og02b1b_ctrl_ops,
                                 V4L2_CID_ANALOGUE_GAIN, OG02B1B_GAIN_MIN,
                                 OG02B1B_GAIN_MAX, OG02B1B_GAIN_STEP,
                                 OG02B1B_GAIN_DEFAULT);
 
-        printk("OG02B1B function:%s line:%d   anal_gain:%x\n",__FUNCTION__,__LINE__,(int)og02b1b->anal_gain);
+        //printk("OG02B1B function:%s line:%d   anal_gain:%x\n",__FUNCTION__,__LINE__,(unsigned int)og02b1b->anal_gain);
 
         og02b1b->strobe = v4l2_ctrl_new_std(handler, &og02b1b_ctrl_ops,
                                 V4L2_CID_BRIGHTNESS, 1,
                                 exposure_max/16, 1,
                                 0x88);
 
-        printk("OG02B1B function:%s line:%d   strobe:%x\n",__FUNCTION__,__LINE__,(int)og02b1b->strobe);
+        //printk("OG02B1B function:%s line:%d   strobe:%x\n",__FUNCTION__,__LINE__,(int)og02b1b->strobe);
 
         og02b1b->test_pattern = v4l2_ctrl_new_std_menu_items(handler,
                                 &og02b1b_ctrl_ops, V4L2_CID_TEST_PATTERN,
                                 ARRAY_SIZE(og02b1b_test_pattern_menu) - 1,
                                 0, 0, og02b1b_test_pattern_menu);
 
-        printk("OG02B1B function:%s line:%d   test_pattern:%x\n",__FUNCTION__,__LINE__,(int)og02b1b->test_pattern);
+        //printk("OG02B1B function:%s line:%d   test_pattern:%x\n",__FUNCTION__,__LINE__,(int)og02b1b->test_pattern);
         if (handler->error) {
                 ret = handler->error;
                 dev_err(&og02b1b->client->dev,

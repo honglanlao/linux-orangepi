@@ -981,7 +981,7 @@ static const struct v4l2_subdev_core_ops og02b1b_core_ops = {
 static const struct v4l2_subdev_video_ops og02b1b_video_ops = {
         .s_stream = og02b1b_s_stream,
         .g_frame_interval = og02b1b_g_frame_interval,
-        .g_mbus_config = og02b1b_g_mbus_config,
+       // .g_mbus_config = og02b1b_g_mbus_config,
 };
 
 static const struct v4l2_subdev_pad_ops og02b1b_pad_ops = {
@@ -990,6 +990,7 @@ static const struct v4l2_subdev_pad_ops og02b1b_pad_ops = {
         .enum_frame_interval = og02b1b_enum_frame_interval,
         .get_fmt = og02b1b_get_fmt,
         .set_fmt = og02b1b_set_fmt,
+        .get_mbus_config = og02b1b_g_mbus_config,
 };
 
 static const struct v4l2_subdev_ops og02b1b_subdev_ops = {

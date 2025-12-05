@@ -9,6 +9,7 @@
  * V0.0X01.0X05 add function g_mbus_config
  */
 
+#include <../drivers/gpio/gpiolib.h>
 #include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/delay.h>
@@ -19,11 +20,13 @@
 #include <linux/regulator/consumer.h>
 #include <linux/sysfs.h>
 #include <linux/slab.h>
+#include <linux/version.h>
+#include <linux/compat.h>
 #include <linux/rk-camera-module.h>
 #include <media/media-entity.h>
 #include <media/v4l2-async.h>
 #include <media/v4l2-ctrls.h>
-#include <media/v4l2-subdev.h>
+#include <media/v4l2-subdev.h> 
 #include <linux/pinctrl/consumer.h>
 #include <linux/version.h>
 
@@ -53,7 +56,7 @@
 #define OG02B1B_MODE_SW_STANDBY          0x0
 #define OG02B1B_MODE_STREAMING           BIT(0)
 
-#define OG02B1B_REG_EXPOSURE             0x3500
+#define OG02B1B_REG_EXPOSURE             0x3501 // changed from 0x3500
 #define OG02B1B_EXPOSURE_MIN             4
 #define OG02B1B_EXPOSURE_STEP            1
 #define OG02B1B_VTS_MAX                  0x7fff
@@ -96,12 +99,12 @@
 #define OF_CAMERA_PINCTRL_STATE_SLEEP   "rockchip,camera_sleep"
 
 #define OG02B1B_NAME                     "og02b1b"
-
+#define OG02B1B_MEDIA_BUS_FMT		MEDIA_BUS_FMT_Y10_1X10
 
 //for SL
 #define OV9282_FPS              30
 #define OV9282_FLIP_ENABLE      1
-#define EXP_DEFAULT_TIME_US     3000
+#define EXP_DEFAULT_TIME_US     300000
 #define OV9282_DEFAULT_GAIN     1
 
 #define OV9282_VTS_30_FPS       0xe48
@@ -143,6 +146,8 @@ struct og02b1b_mode {
         u32 hts_def;
         u32 vts_def;
         u32 exp_def;
+        u32 link_freq_idx;
+	u32 bpp;
         const struct regval *reg_list;
 };
 
@@ -165,6 +170,8 @@ struct og02b1b {
         struct v4l2_ctrl        *digi_gain;
         struct v4l2_ctrl        *hblank;
         struct v4l2_ctrl        *vblank;
+        struct v4l2_ctrl	*pixel_rate;
+	struct v4l2_ctrl	*link_freq;
         struct v4l2_ctrl        *test_pattern;
         struct v4l2_ctrl        *strobe;
         struct mutex            mutex;
@@ -212,6 +219,8 @@ static const struct regval og02b1b_global_regs[] = {
         {0x3103, 0x00},
         {0x3106, 0x08},
         {0x31ff, 0x01},
+        //{0x3216, 0x01}, // added
+        //{0x3218, 0x32}, // added
         {0x3501, 0x05},
         {0x3502, 0x7c},
         {0x3506, 0x00},
@@ -221,8 +230,9 @@ static const struct regval og02b1b_global_regs[] = {
         {0x3662, 0x65},
         {0x3664, 0xb0},
         {0x3666, 0x70},
+        //{0x366f, 0x1a}, // added
         {0x3670, 0x68},
-        {0x3674, 0x10},
+        {0x3674, 0x10}, 
         {0x3675, 0x00},
         {0x367e, 0x90},
         {0x3680, 0x84},
@@ -252,8 +262,8 @@ static const struct regval og02b1b_global_regs[] = {
         {0x380b, 0x14},
         {0x380c, 0x03},
         {0x380d, 0xa8},
-        {0x380e, 0x0b}, //0x05    0b
-        {0x380f, 0x10}, //0x88    10
+        //{0x380e, 0x0b}, //0x05    0b
+        //{0x380f, 0x10}, //0x88    10
         {0x3810, 0x00},
         {0x3811, 0x08},
         {0x3812, 0x00},
@@ -300,6 +310,7 @@ static const struct regval og02b1b_global_regs[] = {
         {0x392d, 0x03},
         {0x392e, 0xa8},
         {0x392f, 0x08},
+        //{0x3d81, 0x01}, // added
         {0x4001, 0x00},
         {0x4003, 0x40},
         {0x4008, 0x04},
@@ -318,11 +329,14 @@ static const struct regval og02b1b_global_regs[] = {
         {0x450b, 0x00},
         {0x4600, 0x00},
         {0x4601, 0xa0},
+        //{0x4605, 0x02}, // added
         {0x4708, 0x09},
         {0x470c, 0x81},
         {0x4710, 0x06},
         {0x4711, 0x00},
         {0x4800, 0x00},
+        //{0x4814, 0x6b}, // added
+        //{0x4816, 0x0a}, // added
         {0x481f, 0x30},
         {0x4837, 0x14},
         {0x4f00, 0x00},
@@ -349,7 +363,7 @@ static const struct regval og02b1b_global_regs[] = {
 };
 static const struct og02b1b_mode supported_modes[] = {
            {
-                 .width = 1600,
+                .width = 1600,
                 .height = 1300,
                 .max_fps = {
                         .numerator = 10000,
@@ -357,6 +371,8 @@ static const struct og02b1b_mode supported_modes[] = {
                   },
                   .exp_def = 0x0320,
                   .hts_def = 0x03a8 * 2,
+                  .bpp = 10,
+                  .link_freq_idx = 0,
                   .vts_def = 0x0b10,
                   .reg_list = og02b1b_global_regs,
         },
@@ -382,7 +398,7 @@ static int og02b1b_write_reg(struct i2c_client *client, u16 reg,
         u8 buf[6];
         u8 *val_p;
         __be32 val_be;
-
+	dev_dbg(&client->dev, "write reg(0x%x val:0x%x)!\n", reg, val);
         if (len > 4)
                 return -EINVAL;
 
@@ -417,8 +433,8 @@ static int og02b1b_write_array(struct i2c_client *client,
 }
 
 /* Read registers up to 4 at a time */
-static int og02b1b_read_reg(struct i2c_client *client, u16 reg, unsigned int len,
-                           u32 *val)
+static int og02b1b_read_reg(struct i2c_client *client, u16 reg, unsigned int len, 
+        u32 *val)
 {
         struct i2c_msg msgs[2];
         u8 *data_be_p;
@@ -485,12 +501,17 @@ static int og02b1b_set_fmt(struct v4l2_subdev *sd,
 {
         struct og02b1b *og02b1b = to_og02b1b(sd);
         const struct og02b1b_mode *mode;
+
         s64 h_blank, vblank_def;
+        u64 pixel_rate = 0;
+        u32 lane_num = OG02B1B_LANES;
         printk("OG02B1B function:%s line:%d\n",__FUNCTION__,__LINE__);
         mutex_lock(&og02b1b->mutex);
 
         mode = og02b1b_find_best_fit(fmt);
         fmt->format.code = MEDIA_BUS_FMT_Y10_1X10;
+	//fmt->format.code = MEDIA_BUS_FMT_SGRBG10_1X10;
+
         fmt->format.width = mode->width;
         fmt->format.height = mode->height;
         fmt->format.field = V4L2_FIELD_NONE;
@@ -510,8 +531,16 @@ static int og02b1b_set_fmt(struct v4l2_subdev *sd,
                 __v4l2_ctrl_modify_range(og02b1b->vblank, vblank_def,
                                          OG02B1B_VTS_MAX - mode->height,
                                          1, vblank_def);
-        }
+                __v4l2_ctrl_s_ctrl(og02b1b->vblank, vblank_def);
+		pixel_rate = (u32)link_freq_menu_items[mode->link_freq_idx] / mode->bpp * 2 * lane_num;
 
+		__v4l2_ctrl_s_ctrl_int64(og02b1b->pixel_rate,
+					 pixel_rate);
+		__v4l2_ctrl_s_ctrl(og02b1b->link_freq,
+				   mode->link_freq_idx); 
+        }
+	dev_info(&og02b1b->client->dev, "%s: mode->link_freq_idx(%d)",
+		 __func__, mode->link_freq_idx);
         mutex_unlock(&og02b1b->mutex);
 
         return 0;
@@ -529,6 +558,7 @@ static int og02b1b_get_fmt(struct v4l2_subdev *sd,
         if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
                 fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+                printk("OG02B1B function:%s line:%d, fmt->format width: %d, fmt->format height:%d \n",__FUNCTION__,__LINE__, fmt->format.width, fmt->format.height);
 #else
                 mutex_unlock(&og02b1b->mutex);
                 return -ENOTTY;
@@ -537,8 +567,10 @@ static int og02b1b_get_fmt(struct v4l2_subdev *sd,
                 fmt->format.width = mode->width;
                 fmt->format.height = mode->height;
                 fmt->format.code = MEDIA_BUS_FMT_Y10_1X10;
+		//fmt->format.code = MEDIA_BUS_FMT_SGRBG10_1X10;
                 fmt->format.field = V4L2_FIELD_NONE;
-        }
+ 		printk("OG02B1B function:%s line:%d, fmt->format width: %d, fmt->format height:%d \n",__FUNCTION__,__LINE__, fmt->format.width, fmt->format.height);
+       }
         mutex_unlock(&og02b1b->mutex);
 
         return 0;
@@ -551,6 +583,7 @@ static int og02b1b_enum_mbus_code(struct v4l2_subdev *sd,
         if (code->index != 0)
                 return -EINVAL;
         code->code = MEDIA_BUS_FMT_Y10_1X10;
+	//code->code = MEDIA_BUS_FMT_SGRBG10_1X10;
 
         return 0;
 }
@@ -559,11 +592,15 @@ static int og02b1b_enum_frame_sizes(struct v4l2_subdev *sd,
                                    struct v4l2_subdev_pad_config *cfg,
                                    struct v4l2_subdev_frame_size_enum *fse)
 {
-        if (fse->index >= ARRAY_SIZE(supported_modes))
+        if (fse->index >= ARRAY_SIZE(supported_modes)){
+                printk("OG02B1B function:%s line:%d, > size of supported modes\n",__FUNCTION__,__LINE__);
                 return -EINVAL;
+        }
 
-        if (fse->code != MEDIA_BUS_FMT_Y10_1X10)
+        if (fse->code != MEDIA_BUS_FMT_Y10_1X10){
+                printk("OG02B1B function:%s line:%d, != FMT Y10\n",__FUNCTION__,__LINE__);
                 return -EINVAL;
+        }
 
         fse->min_width  = supported_modes[fse->index].width;
         fse->max_width  = supported_modes[fse->index].width;
@@ -657,8 +694,11 @@ static long og02b1b_compat_ioctl32(struct v4l2_subdev *sd,
                 }
 
                 ret = og02b1b_ioctl(sd, cmd, inf);
-                if (!ret)
+                if (!ret){
                         ret = copy_to_user(up, inf, sizeof(*inf));
+                        if (ret)
+				ret = -EFAULT;
+                }
                 kfree(inf);
                 break;
         case RKMODULE_AWB_CFG:
@@ -671,6 +711,8 @@ static long og02b1b_compat_ioctl32(struct v4l2_subdev *sd,
                 ret = copy_from_user(cfg, up, sizeof(*cfg));
                 if (!ret)
                         ret = og02b1b_ioctl(sd, cmd, cfg);
+                else
+		        ret = -EFAULT;
                 kfree(cfg);
                 break;
         case RKMODULE_SET_QUICK_STREAM:
@@ -692,6 +734,7 @@ static int __og02b1b_start_stream(struct og02b1b *og02b1b)
         int ret;
 
         if (!og02b1b->is_thunderboot) {
+                printk("OG02B1B function:%s line:%d, check is thunderboot\n",__FUNCTION__,__LINE__);
                 ret = og02b1b_write_array(og02b1b->client, og02b1b->cur_mode->reg_list);
                 if (ret)
                         return ret;
@@ -723,6 +766,12 @@ static int og02b1b_s_stream(struct v4l2_subdev *sd, int on)
         int ret = 0;
 
         printk("OG02B1B function:%s line:%d\n",__FUNCTION__,__LINE__);
+        
+        dev_info(&client->dev, "%s: on: %d, %dx%d@%d\n", __func__, on,
+                        og02b1b->cur_mode->width,
+                        og02b1b->cur_mode->height,
+        DIV_ROUND_CLOSEST(og02b1b->cur_mode->max_fps.denominator,
+                                og02b1b->cur_mode->max_fps.numerator));
         mutex_lock(&og02b1b->mutex);
         on = !!on;
         if (on == og02b1b->streaming)
@@ -768,6 +817,7 @@ static int og02b1b_s_power(struct v4l2_subdev *sd, int on)
                 goto unlock_and_return;
 
         if (on) {
+                printk("OG02B1B function:%s line:%d\n",__FUNCTION__,__LINE__);
                 ret = pm_runtime_get_sync(&client->dev);
                 if (ret < 0) {
                         pm_runtime_put_noidle(&client->dev);
@@ -781,13 +831,14 @@ static int og02b1b_s_power(struct v4l2_subdev *sd, int on)
                 }
                 og02b1b->power_on = true;
         } else {
+                printk("OG02B1B function:%s line:%d\n",__FUNCTION__,__LINE__);
                 pm_runtime_put(&client->dev);
                 og02b1b->power_on = false;
         }
 
 unlock_and_return:
         mutex_unlock(&og02b1b->mutex);
-
+ 
         return ret;
 }
 
@@ -827,9 +878,17 @@ static int __og02b1b_power_on(struct og02b1b *og02b1b)
                 return ret;
         }
 
-        if (!IS_ERR(og02b1b->reset_gpio))
-                gpiod_set_value_cansleep(og02b1b->reset_gpio, 1);
+        // add
+        //if (!IS_ERR(og02b1b->pwdn_gpio))
+        //        gpiod_direction_output(og02b1b->pwdn_gpio, 1);
 
+	//if (!IS_ERR(og02b1b->reset_gpio))
+	//       gpiod_direction_output(og02b1b->reset_gpio, 1);
+        // end
+
+        if (!IS_ERR(og02b1b->reset_gpio))
+               gpiod_set_value_cansleep(og02b1b->reset_gpio, 1);
+        
         ret = regulator_bulk_enable(OG02B1B_NUM_SUPPLIES, og02b1b->supplies);
         if (ret < 0) {
                 dev_err(dev, "Failed to enable regulators\n");
@@ -845,7 +904,7 @@ static int __og02b1b_power_on(struct og02b1b *og02b1b)
 
         /* 8192 cycles prior to first SCCB transaction */
         delay_us = og02b1b_cal_delay(8192);
-        usleep_range(delay_us, delay_us * 2);
+        usleep_range(delay_us * 2, delay_us * 3);
 
         return 0;
 
@@ -919,7 +978,7 @@ static int og02b1b_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
         /* Initialize try_fmt */
         try_fmt->width = def_mode->width;
         try_fmt->height = def_mode->height;
-        try_fmt->code = MEDIA_BUS_FMT_Y10_1X10;
+        try_fmt->code = OG02B1B_MEDIA_BUS_FMT;
         try_fmt->field = V4L2_FIELD_NONE;
 
         mutex_unlock(&og02b1b->mutex);
@@ -933,12 +992,20 @@ static int og02b1b_enum_frame_interval(struct v4l2_subdev *sd,
                                       struct v4l2_subdev_pad_config *cfg,
                                       struct v4l2_subdev_frame_interval_enum *fie)
 {
+        printk("OG02B1B function:%s line:%d, fie->index: %d\n",__FUNCTION__,__LINE__, fie->index);
+        printk("OG02B1B function:%s line:%d, modes size: %d\n",__FUNCTION__,__LINE__, ARRAY_SIZE(supported_modes));
         if (fie->index >= ARRAY_SIZE(supported_modes))
                 return -EINVAL;
 
-        if (fie->code != MEDIA_BUS_FMT_Y10_1X10)
-                return -EINVAL;
+        printk("OG02B1B function:%s line:%d, fie->code : %d\n",__FUNCTION__,__LINE__, fie->code );
+        printk("OG02B1B function:%s line:%d, OG02B1B_MEDIA_BUS_FMT: %d\n",__FUNCTION__,__LINE__, OG02B1B_MEDIA_BUS_FMT);
+        //if (fie->code != OG02B1B_MEDIA_BUS_FMT)
+        //        return -EINVAL;
+	fie->code = OG02B1B_MEDIA_BUS_FMT;
 
+        printk("OG02B1B function:%s line:%d, fie->width: %d\n",__FUNCTION__,__LINE__, fie->width );
+        printk("OG02B1B function:%s line:%d, fie->height: %d\n",__FUNCTION__,__LINE__, fie->height );
+        printk("OG02B1B function:%s line:%d, fie->interval: %d\n",__FUNCTION__,__LINE__, fie->interval );
         fie->width = supported_modes[fie->index].width;
         fie->height = supported_modes[fie->index].height;
         fie->interval = supported_modes[fie->index].max_fps;
@@ -949,15 +1016,44 @@ static int og02b1b_g_mbus_config(struct v4l2_subdev *sd,
                                 unsigned int pad_id,
                                 struct v4l2_mbus_config *config)
 {
-        u32 val = 0;
+        //u32 val = 0;
 
+        if (2 == OG02B1B_LANES) {
+		config->type = V4L2_MBUS_CSI2_DPHY;
+		config->flags = V4L2_MBUS_CSI2_2_LANE |
+				V4L2_MBUS_CSI2_CHANNEL_0 |
+				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	} else if (4 == OG02B1B_LANES) {
+		config->type = V4L2_MBUS_CSI2_DPHY;
+		config->flags = V4L2_MBUS_CSI2_4_LANE |
+				V4L2_MBUS_CSI2_CHANNEL_0 |
+				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	}
+/* 
         val = 1 << (OG02B1B_LANES - 1) |
               V4L2_MBUS_CSI2_CHANNEL_0 |
               V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
         config->type = V4L2_MBUS_CSI2_DPHY;
         config->flags = val;
-
+*/
         return 0;
+}
+
+static int og02b1b_get_selection(struct v4l2_subdev *sd,
+				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_selection *sel)
+{
+	struct og02b1b *og02b1b = to_og02b1b(sd);
+
+	if (sel->target == V4L2_SEL_TGT_CROP_BOUNDS) {
+		sel->r.left = 0;
+		sel->r.width = og02b1b->cur_mode->width;
+		sel->r.top = 0;
+		sel->r.height = og02b1b->cur_mode->height;
+		return 0;
+	}
+
+	return -EINVAL;
 }
 
 static const struct dev_pm_ops og02b1b_pm_ops = {
@@ -991,6 +1087,7 @@ static const struct v4l2_subdev_pad_ops og02b1b_pad_ops = {
         .enum_frame_interval = og02b1b_enum_frame_interval,
         .get_fmt = og02b1b_get_fmt,
         .set_fmt = og02b1b_set_fmt,
+        .get_selection = og02b1b_get_selection,
         .get_mbus_config = og02b1b_g_mbus_config,
 };
 
@@ -1012,7 +1109,8 @@ static int og02b1b_set_ctrl(struct v4l2_ctrl *ctrl)
         switch (ctrl->id) {
         case V4L2_CID_VBLANK:
                 /* Update max exposure while meeting expected vblanking */
-                max = og02b1b->cur_mode->height + ctrl->val - 4;
+//                max = og02b1b->cur_mode->height + ctrl->val - 4;
+                max = og02b1b->cur_mode->height + ctrl->val - 12;  // follow datasheet
                 __v4l2_ctrl_modify_range(og02b1b->exposure,
                                          og02b1b->exposure->minimum, max,
                                          og02b1b->exposure->step,
@@ -1025,23 +1123,33 @@ static int og02b1b_set_ctrl(struct v4l2_ctrl *ctrl)
 
         switch (ctrl->id) {
         case V4L2_CID_EXPOSURE:
-                og02b1b_write_reg(og02b1b->client, OV9282_AEC_GROUP_UPDATE_ADDRESS,
-                                       OG02B1B_REG_VALUE_08BIT, OV9282_AEC_GROUP_UPDATE_START_DATA);
 
-                /* 4 least significant bits of expsoure are fractional part */
+                // 4 least significant bits of exposure are fractional part 
                 ret = og02b1b_write_reg(og02b1b->client, OG02B1B_REG_EXPOSURE,
                                        OG02B1B_REG_VALUE_24BIT, ctrl->val << 4);
 
-                og02b1b_write_reg(og02b1b->client, OV9282_AEC_GROUP_UPDATE_ADDRESS,
-                                       OG02B1B_REG_VALUE_08BIT, OV9282_AEC_GROUP_UPDATE_END_DATA);
-                og02b1b_write_reg(og02b1b->client, OV9282_AEC_GROUP_UPDATE_ADDRESS,
-                                       OG02B1B_REG_VALUE_08BIT, OV9282_AEC_GROUP_UPDATE_END_LAUNCH);
+                // Writing to 16bit address directly. 
+                // Do not do  ctrl->val << 4
+                ret = og02b1b_write_reg(og02b1b->client, OG02B1B_REG_EXPOSURE,
+                                       OG02B1B_REG_VALUE_16BIT, ctrl->val);
+                
+                 // Or writing to 2 addr separately
+                 /*
+		 ret = og02b1b_write_reg(og02b1b->client, 0x3501,
+                                       OG02B1B_REG_VALUE_08BIT, 0xb0);
+		 ret = og02b1b_write_reg(og02b1b->client, 0x3502,
+                                       OG02B1B_REG_VALUE_08BIT, 0x40);
+                 */
+	  	 printk("OG02B1B function:%s line:%d, ret = %d\n",__FUNCTION__,__LINE__, ret);	  	   
+
                 break;
         case V4L2_CID_ANALOGUE_GAIN:
-                ret = og02b1b_write_reg(og02b1b->client, OG02B1B_REG_GAIN_H,
+                ret = og02b1b_write_reg(og02b1b->client, 
+                                        OG02B1B_REG_GAIN_H,
                                        OG02B1B_REG_VALUE_08BIT,
                                        (ctrl->val >> OG02B1B_GAIN_H_SHIFT) & OG02B1B_GAIN_H_MASK);
-                ret |= og02b1b_write_reg(og02b1b->client, OG02B1B_REG_GAIN_L,
+                ret |= og02b1b_write_reg(og02b1b->client, 
+                                        OG02B1B_REG_GAIN_L,
                                        OG02B1B_REG_VALUE_08BIT,
                                        ctrl->val & OG02B1B_GAIN_L_MASK);
                 break;
@@ -1080,10 +1188,12 @@ static int og02b1b_initialize_controls(struct og02b1b *og02b1b)
 {
         const struct og02b1b_mode *mode;
         struct v4l2_ctrl_handler *handler;
-        struct v4l2_ctrl *ctrl;
+        //struct v4l2_ctrl *ctrl;
         s64 exposure_max, vblank_def;
         u32 h_blank;
         int ret;
+	u64 dst_pixel_rate = 0;
+	u32 lane_num = OG02B1B_LANES;
 
         printk("OG02B1B function:%s line:%d\n",__FUNCTION__,__LINE__);
         handler = &og02b1b->ctrl_handler;
@@ -1093,18 +1203,20 @@ static int og02b1b_initialize_controls(struct og02b1b *og02b1b)
                 return ret;
         handler->lock = &og02b1b->mutex;
 
-        ctrl = v4l2_ctrl_new_int_menu(handler, NULL, V4L2_CID_LINK_FREQ,
+        og02b1b->link_freq = v4l2_ctrl_new_int_menu(handler, NULL, V4L2_CID_LINK_FREQ,
                                       0, 0, link_freq_menu_items);
-        if (ctrl)
-                ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+        //if (ctrl)
+          //      ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-        v4l2_ctrl_new_std(handler, NULL, V4L2_CID_PIXEL_RATE,
+	dst_pixel_rate = (u32)link_freq_menu_items[mode->link_freq_idx] / mode->bpp * 2 * lane_num;
+        og02b1b->pixel_rate =v4l2_ctrl_new_std(handler, NULL, V4L2_CID_PIXEL_RATE,
                           0, OG02B1B_PIXEL_RATE, 1, OG02B1B_PIXEL_RATE);
 
         h_blank = mode->hts_def - mode->width;
         og02b1b->hblank = v4l2_ctrl_new_std(handler, NULL, V4L2_CID_HBLANK,
                                 h_blank, h_blank, 1, h_blank);
-        //printk("OG02B1B function:%s line:%d   hblank:%x\n",__FUNCTION__,__LINE__,(unsigned int)og02b1b->hblank);
+
+        printk("OG02B1B function:%s line:%d   hblank:%x\n",__FUNCTION__,__LINE__,(unsigned int)og02b1b->hblank);
         if (og02b1b->hblank)
                 og02b1b->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -1114,8 +1226,9 @@ static int og02b1b_initialize_controls(struct og02b1b *og02b1b)
                                 OG02B1B_VTS_MAX - mode->height,
                                 1, vblank_def);
 
-        //printk("OG02B1B function:%s line:%d   vblank:%x\n",__FUNCTION__,__LINE__,(unsigned int)og02b1b->vblank);
-        exposure_max = mode->vts_def - 4;
+        printk("OG02B1B function:%s line:%d   vblank:%x\n",__FUNCTION__,__LINE__,(unsigned int)og02b1b->vblank);
+//        exposure_max = mode->vts_def - 4; // wrong
+        exposure_max = mode->vts_def - 12;  // follow datasheet
         og02b1b->exposure = v4l2_ctrl_new_std(handler, &og02b1b_ctrl_ops,
                                 V4L2_CID_EXPOSURE, OG02B1B_EXPOSURE_MIN,
                                 exposure_max, OG02B1B_EXPOSURE_STEP,
@@ -1175,7 +1288,8 @@ static int og02b1b_check_sensor_id(struct og02b1b *og02b1b,
         ret  = og02b1b_read_reg(client, OG02B1B_REG_CHIP_ID1,OG02B1B_REG_VALUE_08BIT, &id1);
         ret |= og02b1b_read_reg(client, OG02B1B_REG_CHIP_ID2,OG02B1B_REG_VALUE_08BIT, &id2);
         ret |= og02b1b_read_reg(client, OG02B1B_REG_CHIP_ID3,OG02B1B_REG_VALUE_08BIT, &id3);
-        if ((id1 != CHIP_ID1) && (id2 != CHIP_ID2) && (id3 != CHIP_ID3))
+        printk("OG02B1B function:%s line:%d, ret = %d\n",__FUNCTION__,__LINE__, ret);   
+         if ((id1 != CHIP_ID1) && (id2 != CHIP_ID2) && (id3 != CHIP_ID3))
         {
                 dev_err(dev, "Unexpected sensor id1(%02x) id2(%02x) id3(%02x), ret(%d)\n", id1,id2,id3, ret);
                 return -ENODEV;
@@ -1225,6 +1339,11 @@ static int og02b1b_probe(struct i2c_client *client,
                                        &og02b1b->module_name);
         ret |= of_property_read_string(node, RKMODULE_CAMERA_LENS_NAME,
                                        &og02b1b->len_name);
+        printk("OG02B1B function:%s line:%d, index=%d, facing=%s,name=%s, lensname=%s\n",__FUNCTION__,__LINE__, 
+                og02b1b->module_index,
+                og02b1b->module_facing, 
+                og02b1b->module_name, 
+                og02b1b->len_name );        
         if (ret) {
                 dev_err(dev, "could not get module information!\n");
                 return -EINVAL;
@@ -1240,7 +1359,10 @@ static int og02b1b_probe(struct i2c_client *client,
                 return -EINVAL;
         }
 
-        og02b1b->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
+        og02b1b->reset_gpio = devm_gpiod_get(dev, "reset1", GPIOD_OUT_LOW);
+        printk("OG02B1B function:%s line:%d : reset-gpio = %lu\n",__FUNCTION__,__LINE__,(og02b1b->reset_gpio)->flags);
+        printk("OG02B1B function:%s line:%d : gpio-name = %s\n",__FUNCTION__,__LINE__,(og02b1b->reset_gpio)->name);
+        printk("OG02B1B function:%s line:%d : gpio-label = %s\n",__FUNCTION__,__LINE__,(og02b1b->reset_gpio)->label);
         if (IS_ERR(og02b1b->reset_gpio))
                 dev_warn(dev, "Failed to get reset-gpios\n");
 

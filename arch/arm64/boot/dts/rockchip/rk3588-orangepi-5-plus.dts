@@ -9,7 +9,7 @@
 #include "rk3588-orangepi-5-plus.dtsi"
 #include "rk3588-linux.dtsi"
 #include "rk3588-orangepi-5-plus-lcd.dtsi"
-#include "rk3588-orangepi-5-plus-camera1.dtsi"
+#include "rk3588-orangepi-5-plus-camera-ori.dtsi"
 
 / {
 	model = "RK3588 OPi 5 Plus";

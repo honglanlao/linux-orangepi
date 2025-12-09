@@ -92,7 +92,6 @@ vcc_dvdd: camera-dvdd-reg {
 		};
 	};
 // end add
-
 };  
 
 

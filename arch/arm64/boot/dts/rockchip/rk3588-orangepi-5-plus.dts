@@ -9,8 +9,8 @@
 #include "rk3588-orangepi-5-plus.dtsi"
 #include "rk3588-linux.dtsi"
 #include "rk3588-orangepi-5-plus-lcd.dtsi"
-//#include "rk3588-orangepi-5-plus-camera-ori.dtsi" 
-#include "rk3588-orangepi-5-plus-camera-imx678.dtsi"
+#include "rk3588-orangepi-5-plus-camera-og02b1b.dtsi" 
+//#include "rk3588-orangepi-5-plus-camera-imx678.dtsi"
 //#include "rk3588-orangepi-5-plus-camera-ov13855.dtsi"  // for ov13855
 
 / {

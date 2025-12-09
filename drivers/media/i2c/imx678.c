@@ -723,6 +723,7 @@ struct imx678 {
 	unsigned int link_freq_idx;
 
 	struct gpio_desc *reset_gpio;
+	struct gpio_desc *pwdn_gpio;
 	struct regulator_bulk_data supplies[imx678_NUM_SUPPLIES];
 
 	struct v4l2_ctrl_handler ctrl_handler;
@@ -1615,11 +1616,37 @@ static int imx678_power_on(struct device *dev)
 		goto reg_off;
 	}
 
-	gpiod_set_value_cansleep(imx678->reset_gpio, 1);
+	// fix imx678 reset2 and pwdn config
+	if (!IS_ERR(imx678->reset_gpio))
+			gpiod_set_value_cansleep(imx678->reset_gpio, 0);
+	
+	ret = regulator_bulk_enable(imx678_NUM_SUPPLIES, imx678->supplies);
+	if (ret < 0) {
+			dev_err(dev, "Failed to enable regulators\n");
+			goto disable_clk;
+	}
+
+	if (!IS_ERR(imx678->reset_gpio))
+			gpiod_set_value_cansleep(imx678->reset_gpio, 1);
+
+	//usleep_range(500, 1000);
+	//if (!IS_ERR(imx678->pwdn_gpio))
+	//		gpiod_set_value_cansleep(imx678->pwdn_gpio, 1);
+
+
+	//gpiod_set_value_cansleep(imx678->reset_gpio, 1);
 	usleep_range(IMX678_XCLR_MIN_DELAY_US,
 			 IMX678_XCLR_MIN_DELAY_US + IMX678_XCLR_DELAY_RANGE_US);
 
+	// this is og02b1b behavior, comment out now, just for ref.
+	/* 8192 cycles prior to first SCCB transaction */
+	//delay_us = og02b1b_cal_delay(8192);
+	// usleep_range(delay_us * 2, delay_us * 3);
+
 	return 0;
+
+disable_clk:
+        clk_disable_unprepare(imx678->xclk);
 
 reg_off:
 	regulator_bulk_disable(imx678_NUM_SUPPLIES, imx678->supplies);

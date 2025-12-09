@@ -9,7 +9,7 @@ vcc_avdd: camera-avdd-reg {
     compatible = "regulator-fixed";
     regulator-name = "camera-avdd";
     regulator-min-microvolt = <3300000>;
-    regulator-max-microvolt = <2800000>;
+    regulator-max-microvolt = <3300000>;
     regulator-boot-on;
     regulator-always-on;
 };
@@ -50,10 +50,10 @@ vcc_dvdd: camera-dvdd-reg {
 	/delete-node/ ov2718@10;
 	/delete-node/ gc2053@37;
 	
-	imx678: imx678@60 {
+	imx678: imx678@1a {
 		status = "okay";
 		compatible = "sony,imx678";
-		reg = <0x34>;
+		reg = <0x1a>;
 		//clocks = <&cru CLK_MIPICSI_OUT>;
 		clocks = <&cru CLK_MIPI_CAMARAOUT_M3>;	
 		clock-names = "xvclk";
@@ -62,14 +62,20 @@ vcc_dvdd: camera-dvdd-reg {
 		//pinctrl-0 = <&mipicsi_clk0>;
 		pinctrl-0 = <&mipim1_camera3_clk>;
 		
-		avdd-supply = <&vcc_avdd>;
-		dovdd-supply = <&vcc_dovdd>;
-		dvdd-supply = <&vcc_dvdd>;
+		//avdd-supply = <&vcc_avdd>;
+		//dovdd-supply = <&vcc_dovdd>;
+		//dvdd-supply = <&vcc_dvdd>;
+		VANA-supply = <&vcc_avdd>;
+		VDDL-supply = <&vcc_dovdd>;
+		VDIG-supply = <&vcc_dvdd>;
+		
+
+                power-domains = <&power RK3588_PD_VI>;
 
 		//pwdn-gpios = <&gpio1 RK_PD6 GPIO_ACTIVE_HIGH>;
         //reset-gpios = <&gpio1 RK_PD7 GPIO_ACTIVE_LOW>;  
-        reset2-gpios = <&gpio1 RK_PC4 GPIO_ACTIVE_LOW>;
-    	pwdn-gpios = <&gpio1 RK_PD5 GPIO_ACTIVE_HIGH>;
+        	reset2-gpios = <&gpio1 RK_PC4 GPIO_ACTIVE_HIGH>;
+	    	//pwdn-gpios = <&gpio1 RK_PD5 GPIO_ACTIVE_HIGH>;
 
 		rockchip,camera-module-index = <0>;
 		rockchip,camera-module-facing = "front";
@@ -87,7 +93,8 @@ vcc_dvdd: camera-dvdd-reg {
 				bus-type = <4>;
 				data-lanes = <1 2 3 4>; 
 				clock-lanes = <0>;
-		        link-frequencies = /bits/ 64 <400000000>;
+		        	//link-frequencies = /bits/ 64 <400000000>;
+				link-frequencies = /bits/ 64 <594000000>;
 			};
 		};
 	};

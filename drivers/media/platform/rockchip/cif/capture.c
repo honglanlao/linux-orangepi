@@ -4609,6 +4609,8 @@ int rkcif_init_rx_buf(struct rkcif_stream *stream, int buf_num)
 {
 	struct rkcif_device *dev = stream->cifdev;
 	struct v4l2_pix_format_mplane *pixm = &stream->pixm;
+
+	printk(KERN_WARNING "In: %s line:%d, pixm width size: %d, %d, %d\n",__FUNCTION__,__LINE__, pixm->width, pixm->height, pixm->pixelformat);
 	struct rkcif_dummy_buffer *dummy;
 	struct rkcif_rx_buffer *buf;
 	struct sditf_priv *priv = dev->sditf[0];
@@ -4648,6 +4650,8 @@ int rkcif_init_rx_buf(struct rkcif_stream *stream, int buf_num)
 		buf = &stream->rx_buf[i];
 		memset(buf, 0, sizeof(*buf));
 		dummy = &buf->dummy;
+
+		printk(KERN_WARNING "In: %s line:%d, dummy size: %d\n",__FUNCTION__,__LINE__, dummy->size);
 		dummy->size = pixm->plane_fmt[0].sizeimage;
 		dummy->is_need_vaddr = true;
 		dummy->is_need_dbuf = true;
@@ -4723,6 +4727,8 @@ static int rkcif_create_dummy_buf(struct rkcif_stream *stream)
 	int ret = 0;
 	int i, j;
 
+	printk(KERN_WARNING "in create buffer:%s line:%d, hw->dev_num: %d\n",__FUNCTION__,__LINE__, hw->dev_num);
+	printk(KERN_WARNING "in create buffer:%s line:%d, sizeof(fie): %d\n",__FUNCTION__,__LINE__, sizeof(fie));
 	for (i = 0; i < hw->dev_num; i++) {
 		tmp_dev = hw->cif_dev[i];
 		if (tmp_dev->terminal_sensor.sd) {
@@ -4734,6 +4740,8 @@ static int rkcif_create_dummy_buf(struct rkcif_stream *stream)
 				ret = v4l2_subdev_call(tmp_dev->terminal_sensor.sd,
 						       pad, enum_frame_interval,
 						       NULL, &fie);
+				printk(KERN_WARNING "in create buffer:%s line:%d, fie.width: %d, fie.height: %d\n",__FUNCTION__,__LINE__, fie.width, fie.height);
+				printk(KERN_WARNING "in create buffer:%s line:%d, enum_frame_interval v4l2_subdev_call retur: %d\n",__FUNCTION__,__LINE__, ret);
 				if (!ret) {
 					if (fie.code == MEDIA_BUS_FMT_RGB888_1X24)
 						size = fie.width * fie.height * 3;
@@ -4757,6 +4765,10 @@ static int rkcif_create_dummy_buf(struct rkcif_stream *stream)
 		fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 		ret = v4l2_subdev_call(dev->terminal_sensor.sd,
 				       pad, get_fmt, NULL, &fmt);
+		
+		printk(KERN_WARNING "in create buffer:%s line:%d, fmt.width: %d, fmt.height: %d\n",__FUNCTION__,__LINE__, fmt.format.width, fmt.format.height);			   
+		printk(KERN_WARNING "in create buffer:%s line:%d, get_fmt v4l2_subdev_call retur: %d\n",__FUNCTION__,__LINE__, ret);
+
 		if (!ret) {
 			if (fmt.format.code == MEDIA_BUS_FMT_RGB888_1X24)
 				size = fmt.format.width  * fmt.format.height * 3;
@@ -4771,6 +4783,8 @@ static int rkcif_create_dummy_buf(struct rkcif_stream *stream)
 
 	dummy_buf->is_need_vaddr = true;
 	dummy_buf->is_need_dbuf = true;
+
+	printk(KERN_WARNING "in create buffer:%s line:%d, dummy size: %d\n",__FUNCTION__,__LINE__, dummy_buf->size);
 	ret = rkcif_alloc_buffer(dev, dummy_buf);
 	if (ret) {
 		v4l2_err(&dev->v4l2_dev,

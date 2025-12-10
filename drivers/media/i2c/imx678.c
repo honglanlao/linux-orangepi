@@ -232,6 +232,8 @@ struct imx678_mode {
 
 	/* Default register values */
 	struct IMX678_reg_list reg_list;
+
+	struct v4l2_fract max_fps;
 };
 
 /* IMX678 Register List */
@@ -631,8 +633,8 @@ static const struct imx678_reg mode_1080_regs_12bit[] = {
 struct imx678_mode supported_modes[] = {
 	{
 		/* 1080p60 2x2 binning */
-		.width = 1928,
-		.height = 1090,
+		.width = 1920,
+		.height = 1080,
 		.hmax_div = 1,
 		.min_HMAX = 366,
 		.min_VMAX = IMX678_VMAX_DEFAULT,
@@ -648,11 +650,15 @@ struct imx678_mode supported_modes[] = {
 			.num_of_regs = ARRAY_SIZE(mode_1080_regs_12bit),
 			.regs = mode_1080_regs_12bit,
 		},
+		.max_fps = {
+			.numerator = 10000,
+			.denominator = 300000,
+		},
 	},
 	{
 		/* 4K60 All pixel */
-		.width = 3856,
-		.height = 2180,
+		.width = 3840,
+		.height = 2160,
 		.min_HMAX = 550,
 		.min_VMAX = IMX678_VMAX_DEFAULT,
 		.default_HMAX = 550,
@@ -667,6 +673,10 @@ struct imx678_mode supported_modes[] = {
 		.reg_list = {
 			.num_of_regs = ARRAY_SIZE(mode_4k_regs_12bit),
 			.regs = mode_4k_regs_12bit,
+		},
+		.max_fps = {
+			.numerator = 10000,
+			.denominator = 300000,
 		},
 	},
 };
@@ -1267,6 +1277,18 @@ static int imx678_enum_mbus_code(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static int imx415_g_frame_interval(struct v4l2_subdev *sd,
+					struct v4l2_subdev_frame_interval *fi)
+{
+	struct imx678 *imx678 = to_imx678(sd);
+	const struct imx678_mode *mode = imx678->cur_mode;
+
+	fi->interval = mode->max_fps;
+
+	return 0;
+}
+
+
 static int imx678_enum_frame_size(struct v4l2_subdev *sd,
 				  //struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_pad_config *cfg,
@@ -1784,6 +1806,7 @@ static const struct v4l2_subdev_core_ops imx678_core_ops = {
 
 static const struct v4l2_subdev_video_ops imx678_video_ops = {
 	.s_stream = imx678_set_stream,
+	.g_frame_interval = imx415_g_frame_interval,
 };
 
 static const struct v4l2_subdev_pad_ops imx678_pad_ops = {

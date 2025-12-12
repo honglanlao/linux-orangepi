@@ -631,34 +631,34 @@ static const struct imx678_reg mode_1080_regs_12bit[] = {
 
 /* Mode configs */
 struct imx678_mode supported_modes[] = {
-	{
-		/* 1080p60 2x2 binning */
-		.width = 1920,
-		.height = 1080,
-		.hmax_div = 1,
-		.min_HMAX = 366,
-		.min_VMAX = IMX678_VMAX_DEFAULT,
-		.default_HMAX = 366,
-		.default_VMAX = IMX678_VMAX_DEFAULT,
-		.crop = {
-			.left = IMX678_PIXEL_ARRAY_LEFT,
-			.top = IMX678_PIXEL_ARRAY_TOP,
-			.width = IMX678_PIXEL_ARRAY_WIDTH,
-			.height = IMX678_PIXEL_ARRAY_HEIGHT,
-		},
-		.reg_list = {
-			.num_of_regs = ARRAY_SIZE(mode_1080_regs_12bit),
-			.regs = mode_1080_regs_12bit,
-		},
-		.max_fps = {
-			.numerator = 10000,
-			.denominator = 300000,
-		},
-	},
+	// {
+	// 	/* 1080p60 2x2 binning */
+	// 	.width = 1920,
+	// 	.height = 1080,
+	// 	.hmax_div = 1,
+	// 	.min_HMAX = 366,
+	// 	.min_VMAX = IMX678_VMAX_DEFAULT,
+	// 	.default_HMAX = 366,
+	// 	.default_VMAX = IMX678_VMAX_DEFAULT,
+	// 	.crop = {
+	// 		.left = IMX678_PIXEL_ARRAY_LEFT,
+	// 		.top = IMX678_PIXEL_ARRAY_TOP,
+	// 		.width = IMX678_PIXEL_ARRAY_WIDTH,
+	// 		.height = IMX678_PIXEL_ARRAY_HEIGHT,
+	// 	},
+	// 	.reg_list = {
+	// 		.num_of_regs = ARRAY_SIZE(mode_1080_regs_12bit),
+	// 		.regs = mode_1080_regs_12bit,
+	// 	},
+	// 	.max_fps = {
+	// 		.numerator = 10000,
+	// 		.denominator = 300000,
+	// 	},
+	// },
 	{
 		/* 4K60 All pixel */
-		.width = 3840,
-		.height = 2160,
+		.width = IMX678_NATIVE_WIDTH,
+		.height = IMX678_NATIVE_HEIGHT,
 		.min_HMAX = 550,
 		.min_VMAX = IMX678_VMAX_DEFAULT,
 		.default_HMAX = 550,
@@ -701,8 +701,8 @@ static const u32 codes_normal[] = {
 };
 
 /* Flip isn’t relevant for mono */
-static const u32 mono_codes[] = {
-	MEDIA_BUS_FMT_Y10_1X10,   /* 16-bit mono */
+static const u32 codes_mono[] = {
+	MEDIA_BUS_FMT_Y10_1X10,   /* 10-bit mono */
 	MEDIA_BUS_FMT_Y12_1X12,   /* 12-bit mono */
 };
 
@@ -800,12 +800,24 @@ static inline void get_mode_table(struct imx678 *imx678, unsigned int code,
 	*num_modes = 0;
 
 
-	/* --- Color paths --- */
+	// /* --- Color paths --- */
+	// switch (code) {
+	// case MEDIA_BUS_FMT_SRGGB12_1X12:
+	// case MEDIA_BUS_FMT_SGRBG12_1X12:
+	// case MEDIA_BUS_FMT_SGBRG12_1X12:
+	// case MEDIA_BUS_FMT_SBGGR12_1X12:
+	// 	*mode_list = supported_modes;
+	// 	*num_modes = ARRAY_SIZE(supported_modes);
+	// 	break;
+	// default:
+	// 	*mode_list = NULL;
+	// 	*num_modes = 0;
+	// }
+
+	/* --- Mono paths --- */
 	switch (code) {
-	case MEDIA_BUS_FMT_SRGGB12_1X12:
-	case MEDIA_BUS_FMT_SGRBG12_1X12:
-	case MEDIA_BUS_FMT_SGBRG12_1X12:
-	case MEDIA_BUS_FMT_SBGGR12_1X12:
+    case MEDIA_BUS_FMT_Y10_1X10:
+    case MEDIA_BUS_FMT_Y12_1X12:
 		*mode_list = supported_modes;
 		*num_modes = ARRAY_SIZE(supported_modes);
 		break;
@@ -934,18 +946,18 @@ static u32 imx678_get_format_code(struct imx678 *imx678, u32 code)
 
 	lockdep_assert_held(&imx678->mutex);
 
-	for (i = 0; i < ARRAY_SIZE(codes_normal); i++)
-		if (codes_normal[i] == code)
+	for (i = 0; i < ARRAY_SIZE(codes_mono); i++)
+		if (codes_mono[i] == code)
 			break;
-	return codes_normal[i];
+	return codes_mono[i];
 
 }
 
 static void imx678_set_default_format(struct imx678 *imx678)
 {
 	/* Set default mode to max resolution */
-	imx678->cur_mode = &supported_modes[0];
-	imx678->fmt_code = MEDIA_BUS_FMT_SRGGB12_1X12;
+	imx678->cur_mode = &supported_modes[0];  //4k
+	imx678->fmt_code = MEDIA_BUS_FMT_Y12_1X12;  // Default to 12-bit mono
 }
 
 static int imx678_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
@@ -964,7 +976,7 @@ static int imx678_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	/* Initialize try_fmt for the image pad */
 	try_fmt_img->width = supported_modes[0].width;
 	try_fmt_img->height = supported_modes[0].height;
-	try_fmt_img->code = imx678_get_format_code(imx678, MEDIA_BUS_FMT_Y10_1X10);
+	try_fmt_img->code = imx678_get_format_code(imx678, MEDIA_BUS_FMT_Y12_1X12);
 
 	//try_fmt_img->field = V4L2_FIELD_NONE;
 
@@ -974,17 +986,36 @@ static int imx678_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	//try_fmt_meta->code = MEDIA_BUS_FMT_SENSOR_DATA;
 	//try_fmt_meta->field = V4L2_FIELD_NONE;
 
-	/* Initialize try_crop */
-	//try_crop = v4l2_subdev_state_get_crop(fh->state, IMAGE_PAD);
-	//try_crop->left = IMX678_PIXEL_ARRAY_LEFT;
-	//try_crop->top = IMX678_PIXEL_ARRAY_TOP;
-	//try_crop->width = IMX678_PIXEL_ARRAY_WIDTH;
-	//try_crop->height = IMX678_PIXEL_ARRAY_HEIGHT;
+	// /* Initialize try_crop */
+	// try_crop = v4l2_subdev_state_get_crop(fh->state, IMAGE_PAD);
+	// try_crop->left = IMX678_PIXEL_ARRAY_LEFT;
+	// try_crop->top = IMX678_PIXEL_ARRAY_TOP;
+	// try_crop->width = IMX678_PIXEL_ARRAY_WIDTH;
+	// try_crop->height = IMX678_PIXEL_ARRAY_HEIGHT;
 
 	mutex_unlock(&imx678->mutex);
 
 	return 0;
 }
+
+
+static int imx678_enum_frame_interval(struct v4l2_subdev *sd,
+                                      struct v4l2_subdev_pad_config *cfg,
+                                      struct v4l2_subdev_frame_interval_enum *fie)
+{
+        printk("OG02B1B function:%s line:%d, fie->index: %d\n",__FUNCTION__,__LINE__, fie->index);
+        
+        if (fie->index >= ARRAY_SIZE(supported_modes))
+                return -EINVAL;
+        
+		fie->code = MEDIA_BUS_FMT_Y12_1X12;
+
+        fie->width = supported_modes[fie->index].width;
+        fie->height = supported_modes[fie->index].height;
+        fie->interval = supported_modes[fie->index].max_fps;
+        return 0;
+}
+
 
 /* For HDR mode, Gain is limited to 0~80 and HCG is disabled
  * For Normal mode, Gain is limited to 0~240
@@ -1260,8 +1291,8 @@ static int imx678_enum_mbus_code(struct v4l2_subdev *sd,
 		return -EINVAL;
 
 	if (code->pad == IMAGE_PAD) {
-		tbl     = codes_normal;
-		entries = ARRAY_SIZE(codes_normal) / 4;
+		tbl     = codes_mono;
+		entries = ARRAY_SIZE(codes_mono) / 4;
 
 		if (code->index >= entries)
 			return -EINVAL;
@@ -1277,7 +1308,7 @@ static int imx678_enum_mbus_code(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int imx415_g_frame_interval(struct v4l2_subdev *sd,
+static int imx678_g_frame_interval(struct v4l2_subdev *sd,
 					struct v4l2_subdev_frame_interval *fi)
 {
 	struct imx678 *imx678 = to_imx678(sd);
@@ -1359,7 +1390,7 @@ static void imx678_update_metadata_pad_format(struct v4l2_subdev_format *fmt)
 static int imx678_get_pad_format(struct v4l2_subdev *sd,
 				 //struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_pad_config *cfg,
-				 struct v4l2_subdev_format *fmt)
+				struct v4l2_subdev_format *fmt)
 {
 	struct imx678 *imx678 = to_imx678(sd);
 	const struct imx678_mode *mode = imx678->cur_mode;
@@ -1378,7 +1409,13 @@ static int imx678_get_pad_format(struct v4l2_subdev *sd,
 		// 		MEDIA_BUS_FMT_SENSOR_DATA;
 		// fmt->format = *try_fmt;
 
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		//fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+
+		// force format to Y12
+		fmt->format.width = mode->width;
+        fmt->format.height = mode->height;
+		fmt->format.code =  MEDIA_BUS_FMT_Y12_1X12;
+		fmt->format.field = V4L2_FIELD_NONE;
         printk("imx678 function:%s line:%d, fmt->format width: %d, fmt->format height:%d \n",__FUNCTION__,__LINE__, fmt->format.width, fmt->format.height);
 
 
@@ -1392,10 +1429,10 @@ static int imx678_get_pad_format(struct v4l2_subdev *sd,
 		// }
 
 		fmt->format.width = mode->width;
-                fmt->format.height = mode->height;
-                fmt->format.code = MEDIA_BUS_FMT_Y10_1X10;
+        fmt->format.height = mode->height;
+        fmt->format.code = MEDIA_BUS_FMT_Y12_1X12;
 		//fmt->format.code = MEDIA_BUS_FMT_SGRBG10_1X10;
-                fmt->format.field = V4L2_FIELD_NONE;
+        fmt->format.field = V4L2_FIELD_NONE;
  		printk("imx678 function:%s line:%d, fmt->format width: %d, fmt->format height:%d \n",__FUNCTION__,__LINE__, fmt->format.width, fmt->format.height);
 	}
 
@@ -1445,7 +1482,7 @@ static int imx678_set_pad_format(struct v4l2_subdev *sd,
 		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 			//framefmt = v4l2_subdev_state_get_format(sd_state, fmt->pad);
 			*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
-			*framefmt = fmt->format;
+			//*framefmt = fmt->format;
 		} else {
 			/* Only one embedded data mode is supported */
 			imx678_update_metadata_pad_format(fmt);
@@ -1642,7 +1679,7 @@ static int imx678_power_on(struct device *dev)
 	if (!IS_ERR(imx678->reset_gpio))
 			gpiod_set_value_cansleep(imx678->reset_gpio, 0);
 	
-	ret = regulator_bulk_enable(imx678_NUM_SUPPLIES, imx678->supplies);
+	
 	if (ret < 0) {
 			dev_err(dev, "Failed to enable regulators\n");
 			goto disable_clk;
@@ -1796,7 +1833,8 @@ static int imx678_get_selection(struct v4l2_subdev *sd,
 		return 0;
 	}
 
-	return -EINVAL;
+ 	return -EINVAL;
+
 }
 
 static const struct v4l2_subdev_core_ops imx678_core_ops = {
@@ -1806,7 +1844,7 @@ static const struct v4l2_subdev_core_ops imx678_core_ops = {
 
 static const struct v4l2_subdev_video_ops imx678_video_ops = {
 	.s_stream = imx678_set_stream,
-	.g_frame_interval = imx415_g_frame_interval,
+	.g_frame_interval = imx678_g_frame_interval,
 };
 
 static const struct v4l2_subdev_pad_ops imx678_pad_ops = {
@@ -1815,6 +1853,8 @@ static const struct v4l2_subdev_pad_ops imx678_pad_ops = {
 	.set_fmt = imx678_set_pad_format,
 	.get_selection = imx678_get_selection,
 	.enum_frame_size = imx678_enum_frame_size,
+	.enum_frame_interval = imx678_enum_frame_interval,
+    //.get_mbus_config = imx678_get_mbus_config,
 };
 
 static const struct v4l2_subdev_ops imx678_subdev_ops = {
